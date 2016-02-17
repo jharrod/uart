@@ -71,7 +71,7 @@
  * The following constant controls the length of the buffers to be sent
  * and received with the UART,
  */
-#define TEST_BUFFER_SIZE	3
+#define TEST_BUFFER_SIZE	1
 
 /************************** Function Prototypes *****************************/
 int UartPsIntrExample(XScuGic *IntcInstPtr, XUartPs *UartInstPtr,
@@ -108,7 +108,6 @@ volatile int TotalSentCount;
 volatile int data2Read = 0;
 int TotalErrorCount;
 volatile int count = 0;
-
 //void print(char *str);
 
 int main()
@@ -129,7 +128,6 @@ int main()
     if (XGetPlatform_Info() == XPLAT_ZYNQ_ULTRA_MP) {
     	#ifdef XPAR_XUARTPS_1_DEVICE_ID
     		DeviceId = XPAR_XUARTPS_1_DEVICE_ID;
-    		printf("IFDEF\n")
     	#endif
     }
 
@@ -141,6 +139,7 @@ int main()
     	if (NULL == Config) {
     		return XST_FAILURE;
     	}
+
 
     	Status = XUartPs_CfgInitialize(&uart, Config, Config->BaseAddress);
     	if (Status != XST_SUCCESS) {
@@ -162,6 +161,9 @@ int main()
     		return XST_FAILURE;
     	}
 
+    	//force receive interrupt for every byte (char)
+    	XUartPs_SetFifoThreshold(&uart, 1);
+
     	/*
     	 * Setup the handlers for the UART that will be called from the
     	 * interrupt context when data has been sent and received, specify
@@ -171,8 +173,7 @@ int main()
     	XUartPs_SetHandler(&uart, (XUartPs_Handler)Handler, &uart);
 
     	/*
-    	 * Enable the interrupt of the UART so interrupts will occur, setup
-    	 * a local loopback so data that is sent will be received.
+    	 * Enable the interrupt of the UART so interrupts will occur
     	 */
     	IntrMask =
     		XUARTPS_IXR_TOUT | XUARTPS_IXR_PARITY | XUARTPS_IXR_FRAMING |
@@ -203,15 +204,13 @@ int main()
 
 
     	/* Run the UartPs Interrupt example, specify the the Device ID */
-    	Status = UartPsIntrExample(&intc, &uart, //currently sets up some of uart.Need to pull out what is needed
-    				UART_DEVICE_ID, UART_INT_IRQ_ID);
+    	 //currently sets up some of uart.Need to pull out what is needed
+    	Status = UartPsIntrExample(&intc, &uart,UART_DEVICE_ID, UART_INT_IRQ_ID);
 
     	/* if (Status != XST_SUCCESS) {
     		xil_printf("UART Interrupt Example Test Failed\r\n");
     		return XST_FAILURE;
     	} */
-    	printf("Hello World\n\r");
-    	printf("\n\rhello\n\r");
 
     	xil_printf("Successfully ran UART Interrupt Example Test\r\n");
     	xil_printf("count = %i\r\n", count);
@@ -311,15 +310,12 @@ int UartPsIntrExample(XScuGic *IntcInstPtr, XUartPs *UartInstPtr,
 	*/
 
 	//echo
-	//while (ch != 'q' || ch != 'Q') {
-		//XUartPs_Recv(UartInstPtr, ch, TEST_BUFFER_SIZE);
-
+	while (ch[0] != 0x1b) { //while != escape button
 		if (send == 1){
 			XUartPs_Send(UartInstPtr, ch, TEST_BUFFER_SIZE);
-			printf("here\r\n");
 			send = 0;
 		}
-	//}
+	}
 
 
 	/* Set the UART in Normal Mode */
@@ -365,7 +361,11 @@ void Handler(void *CallBackRef, u32 Event, unsigned int EventData)
 	/* All of the data has been received */
 	if (Event == XUARTPS_EVENT_RECV_DATA) {
 		TotalReceivedCount = EventData;
-		send = 1;
+		if (EventData > 0){
+			XUartPs_Recv(&uart, ch, TEST_BUFFER_SIZE);
+			//ch[0] = (char) XUartPs_RecvByte(XPAR_PS7_UART_1_BASEADDR); //doesn't work
+			send = 1;
+		}
 	}
 
 	/*
